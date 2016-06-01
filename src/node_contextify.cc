@@ -123,44 +123,66 @@ class ContextifyContext {
 
     Local<Function> clone_property_method;
 
-    Local<Array> names = global->GetOwnPropertyNames();
+    Local<Array> names = global->GetOwnPropertyNames(context).ToLocalChecked();
     int length = names->Length();
     for (int i = 0; i < length; i++) {
       Local<String> key = names->Get(i)->ToString(env()->isolate());
       bool has = sandbox_obj->HasOwnProperty(context, key).FromJust();
       if (!has) {
-        // Could also do this like so:
-        //
-        // PropertyAttribute att = global->GetPropertyAttributes(key_v);
-        // Local<Value> val = global->Get(key_v);
-        // sandbox->ForceSet(key_v, val, att);
-        //
-        // However, this doesn't handle ES6-style properties configured with
-        // Object.defineProperty, and that's exactly what we're up against at
-        // this point.  ForceSet(key,val,att) only supports value properties
-        // with the ES3-style attribute flags (DontDelete/DontEnum/ReadOnly),
-        // which doesn't faithfully capture the full range of configurations
-        // that can be done using Object.defineProperty.
-        if (clone_property_method.IsEmpty()) {
-          Local<String> code = FIXED_ONE_BYTE_STRING(env()->isolate(),
-              "(function cloneProperty(source, key, target) {\n"
-              "  if (key === 'Proxy') return;\n"
-              "  try {\n"
-              "    var desc = Object.getOwnPropertyDescriptor(source, key);\n"
-              "    if (desc.value === source) desc.value = target;\n"
-              "    Object.defineProperty(target, key, desc);\n"
-              "  } catch (e) {\n"
-              "   // Catch sealed properties errors\n"
-              "  }\n"
-              "})");
+        Local<Value> desc = global->GetOwnPropertyDescriptor(context, key)
+            .ToLocalChecked();
 
-          Local<Script> script =
-              Script::Compile(context, code).ToLocalChecked();
-          clone_property_method = Local<Function>::Cast(script->Run());
-          CHECK(clone_property_method->IsFunction());
+        Local<Boolean> configurable =
+            Local<Boolean>::Cast(Local<Object>::Cast(desc)->Get(context,
+               String::NewFromUtf8(env()->isolate(), "configurable",
+                v8::NewStringType::kNormal).ToLocalChecked())
+                .ToLocalChecked());
+        Local<Boolean> enumerable =
+            Local<Boolean>::Cast(Local<Object>::Cast(desc)->Get(context,
+              String::NewFromUtf8(env()->isolate(), "enumerable",
+                                  v8::NewStringType::kNormal).ToLocalChecked())
+              .ToLocalChecked());
+
+        uint8_t attributes = 0;
+        if (!configurable->BooleanValue()) {
+          attributes |= v8::PropertyAttribute::DontDelete;
         }
-        Local<Value> args[] = { global, key, sandbox_obj };
-        clone_property_method->Call(global, arraysize(args), args);
+        if (!enumerable->BooleanValue()) {
+          attributes |= v8::PropertyAttribute::DontEnum;
+        }
+
+        MaybeLocal<Value> setObject = Local<Object>::Cast(desc)
+             ->Get(context, String::NewFromUtf8(env()->isolate(), "set",
+                      v8::NewStringType::kNormal).ToLocalChecked());
+        if (!setObject.ToLocalChecked()->IsUndefined()) {
+          Local<Function> set =
+              Local<Function>::Cast(setObject.ToLocalChecked());
+
+          Local<Function> get = Local<Function>::Cast(Local<Object>::Cast(desc)
+              ->Get(context, String::NewFromUtf8(env()->isolate(), "get",
+                   v8::NewStringType::kNormal).ToLocalChecked())
+                                        .ToLocalChecked());
+          sandbox_obj->SetAccessorProperty(key, get, set,
+                                           v8::PropertyAttribute(attributes));
+        } else {
+          Local<String> value =
+              Local<String>::Cast(Local<Object>::Cast(desc)->Get(context,
+                 String::NewFromUtf8(env()->isolate(), "value",
+                     v8::NewStringType::kNormal).ToLocalChecked())
+                  .ToLocalChecked());
+
+          Local<Boolean> writable =
+              Local<Boolean>::Cast(Local<Object>::Cast(desc)
+                ->Get(context, String::NewFromUtf8(env()->isolate(), "writable",
+                      v8::NewStringType::kNormal).ToLocalChecked())
+                  .ToLocalChecked());
+
+          if (!writable->BooleanValue()) {
+            attributes |= v8::PropertyAttribute::ReadOnly;
+          }
+          sandbox_obj->DefineOwnProperty(context, key, value,
+                                         v8::PropertyAttribute(attributes));
+        }
       }
     }
   }
