@@ -23,4 +23,45 @@ assert(res);
 assert.equal(typeof res, 'object');
 assert.equal(res, x);
 assert.equal(o.f, res);
-assert.deepStrictEqual(Object.keys(o), ['console', 'x', 'g', 'f']);
+assert.deepStrictEqual(Object.keys(o), ['console', 'x', 'f', 'g']);
+
+o.f = 5;
+assert.equal(o.f, 5);
+assert.equal(o.x, 5);
+
+
+code =
+  'Object.defineProperty(this, "v", {\n' +
+  '  value: 42,\n' +
+  '});\n';
+
+vm.runInContext(code, o, 'test');
+
+assert.equal(o.v, 42);
+
+// https://github.com/nodejs/node/issues/5679
+code =
+    '(function() {' +
+    '  "use strict";' +
+    '  global.x = 10;' +
+    '  Object.defineProperty(global, "x", { ' +
+    '    writable: false, ' +
+    '    enumerable: false, ' +
+    '    configurable: false, ' +
+    '    value: 20 ' +
+    '  }); ' +
+    '})()';
+
+var global = {};
+global.console = console;
+global.global = global;
+
+var context = vm.createContext(global);
+vm.runInContext(code, context);
+
+
+assert.equal(global.x, 20);
+
+assert.throws(function() {global.x = 30;});
+
+assert.equal(global.x, 20);

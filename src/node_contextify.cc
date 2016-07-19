@@ -1,12 +1,8 @@
 #include "node.h"
-#include "node_internals.h"
 #include "node_watchdog.h"
-#include "base-object.h"
 #include "base-object-inl.h"
 #include "env.h"
-#include "env-inl.h"
 #include "util.h"
-#include "util-inl.h"
 #include "v8-debug.h"
 
 namespace node {
@@ -92,79 +88,6 @@ class ContextifyContext {
     return Local<Object>::Cast(context()->GetEmbedderData(kSandboxObjectIndex));
   }
 
-  // XXX(isaacs): This function only exists because of a shortcoming of
-  // the V8 SetNamedPropertyHandler function.
-  //
-  // It does not provide a way to intercept Object.defineProperty(..)
-  // calls.  As a result, these properties are not copied onto the
-  // contextified sandbox when a new global property is added via either
-  // a function declaration or a Object.defineProperty(global, ...) call.
-  //
-  // Note that any function declarations or Object.defineProperty()
-  // globals that are created asynchronously (in a setTimeout, callback,
-  // etc.) will happen AFTER the call to copy properties, and thus not be
-  // caught.
-  //
-  // The way to properly fix this is to add some sort of a
-  // Object::SetNamedDefinePropertyHandler() function that takes a callback,
-  // which receives the property name and property descriptor as arguments.
-  //
-  // Luckily, such situations are rare, and asynchronously-added globals
-  // weren't supported by Node's VM module until 0.12 anyway.  But, this
-  // should be fixed properly in V8, and this copy function should be
-  // removed once there is a better way.
-  void CopyProperties() {
-    HandleScope scope(env()->isolate());
-
-    Local<Context> context = PersistentToLocal(env()->isolate(), context_);
-    Local<Object> global =
-        context->Global()->GetPrototype()->ToObject(env()->isolate());
-    Local<Object> sandbox_obj = sandbox();
-
-    Local<Function> clone_property_method;
-
-    Local<Array> names = global->GetOwnPropertyNames();
-    int length = names->Length();
-    for (int i = 0; i < length; i++) {
-      Local<String> key = names->Get(i)->ToString(env()->isolate());
-      bool has = sandbox_obj->HasOwnProperty(context, key).FromJust();
-      if (!has) {
-        // Could also do this like so:
-        //
-        // PropertyAttribute att = global->GetPropertyAttributes(key_v);
-        // Local<Value> val = global->Get(key_v);
-        // sandbox->ForceSet(key_v, val, att);
-        //
-        // However, this doesn't handle ES6-style properties configured with
-        // Object.defineProperty, and that's exactly what we're up against at
-        // this point.  ForceSet(key,val,att) only supports value properties
-        // with the ES3-style attribute flags (DontDelete/DontEnum/ReadOnly),
-        // which doesn't faithfully capture the full range of configurations
-        // that can be done using Object.defineProperty.
-        if (clone_property_method.IsEmpty()) {
-          Local<String> code = FIXED_ONE_BYTE_STRING(env()->isolate(),
-              "(function cloneProperty(source, key, target) {\n"
-              "  if (key === 'Proxy') return;\n"
-              "  try {\n"
-              "    var desc = Object.getOwnPropertyDescriptor(source, key);\n"
-              "    if (desc.value === source) desc.value = target;\n"
-              "    Object.defineProperty(target, key, desc);\n"
-              "  } catch (e) {\n"
-              "   // Catch sealed properties errors\n"
-              "  }\n"
-              "})");
-
-          Local<Script> script =
-              Script::Compile(context, code).ToLocalChecked();
-          clone_property_method = Local<Function>::Cast(script->Run());
-          CHECK(clone_property_method->IsFunction());
-        }
-        Local<Value> args[] = { global, key, sandbox_obj };
-        clone_property_method->Call(global, arraysize(args), args);
-      }
-    }
-  }
-
 
   // This is an object that just keeps an internal pointer to this
   // ContextifyContext.  It's passed to the NamedPropertyHandler.  If we
@@ -200,7 +123,12 @@ class ContextifyContext {
                                              GlobalPropertyQueryCallback,
                                              GlobalPropertyDeleterCallback,
                                              GlobalPropertyEnumeratorCallback,
+                                             GlobalPropertyDefinerCallback,
                                              CreateDataWrapper(env));
+
+    // Whenever a property is accessed on objects created from this template,
+    // the provided callback is invoked, i.e., the property is changed
+    // on the sandbox object, too.
     object_template->SetHandler(config);
 
     Local<Context> ctx = Context::New(env->isolate(), nullptr, object_template);
@@ -327,11 +255,11 @@ class ContextifyContext {
   static ContextifyContext* ContextFromContextifiedSandbox(
       Environment* env,
       const Local<Object>& sandbox) {
-    auto maybe_value =
+    auto is_contextified =
         sandbox->GetPrivate(env->context(),
                             env->contextify_context_private_symbol());
     Local<Value> context_external_v;
-    if (maybe_value.ToLocal(&context_external_v) &&
+    if (is_contextified.ToLocal(&context_external_v) &&
         context_external_v->IsExternal()) {
       Local<External> context_external = context_external_v.As<External>();
       return static_cast<ContextifyContext*>(context_external->Value());
@@ -346,7 +274,7 @@ class ContextifyContext {
     ContextifyContext* ctx;
     ASSIGN_OR_RETURN_UNWRAP(&ctx, args.Data().As<Object>());
 
-    // Stil initializing
+    // Still initializing
     if (ctx->context_.IsEmpty())
       return;
 
@@ -354,10 +282,6 @@ class ContextifyContext {
     Local<Object> sandbox = ctx->sandbox();
     MaybeLocal<Value> maybe_rv =
         sandbox->GetRealNamedProperty(context, property);
-    if (maybe_rv.IsEmpty()) {
-      maybe_rv =
-          ctx->global_proxy()->GetRealNamedProperty(context, property);
-    }
 
     Local<Value> rv;
     if (maybe_rv.ToLocal(&rv)) {
@@ -376,7 +300,7 @@ class ContextifyContext {
     ContextifyContext* ctx;
     ASSIGN_OR_RETURN_UNWRAP(&ctx, args.Data().As<Object>());
 
-    // Stil initializing
+    // Still initializing
     if (ctx->context_.IsEmpty())
       return;
 
@@ -398,11 +322,6 @@ class ContextifyContext {
     Maybe<PropertyAttribute> maybe_prop_attr =
         ctx->sandbox()->GetRealNamedPropertyAttributes(context, property);
 
-    if (maybe_prop_attr.IsNothing()) {
-      maybe_prop_attr =
-          ctx->global_proxy()->GetRealNamedPropertyAttributes(context,
-                                                              property);
-    }
 
     if (maybe_prop_attr.IsJust()) {
       PropertyAttribute prop_attr = maybe_prop_attr.FromJust();
@@ -438,6 +357,76 @@ class ContextifyContext {
       return;
 
     args.GetReturnValue().Set(ctx->sandbox()->GetPropertyNames());
+  }
+
+  static void GlobalPropertyDefinerCallback(
+      Local<Name> key,
+      Local<Value> desc,
+      const PropertyCallbackInfo<Value>& args) {
+    ContextifyContext* ctx;
+    ASSIGN_OR_RETURN_UNWRAP(&ctx, args.Data().As<Object>());
+
+    // Still initializing
+    if (ctx->context_.IsEmpty())
+      return;
+
+    Local<Context> context = ctx->context();
+    Local<Object> sandbox = ctx->sandbox();
+
+    MaybeLocal<Value> maybe_enumerable = Local<Object>::Cast(desc)
+        ->Get(context, String::NewFromUtf8(context->GetIsolate(),
+                                           "enumerable"));
+    Local<Boolean> enumerable = Local<Boolean>::Cast(
+        maybe_enumerable.ToLocalChecked());
+
+    MaybeLocal<Value> maybe_configurable = Local<Object>::Cast(desc)
+        ->Get(context, String::NewFromUtf8(context->GetIsolate(),
+                                           "configurable"));
+    Local<Boolean> configurable = Local<Boolean>::Cast(
+        maybe_configurable.ToLocalChecked());
+
+    int attr = PropertyAttribute::None;
+
+    if (!enumerable->BooleanValue()) {
+      attr += PropertyAttribute::DontEnum;
+    }
+
+    if (!configurable->BooleanValue()) {
+      attr += PropertyAttribute::DontDelete;
+    }
+
+    MaybeLocal<Value> maybe_value = Local<Object>::Cast(desc)
+        ->Get(context, String::NewFromUtf8(context->GetIsolate(), "value"));
+    Local<Value> value = maybe_value.ToLocalChecked();
+
+    if (!value->IsUndefined()) {
+      MaybeLocal<Value> maybe_writable = Local<Object>::Cast(desc)
+          ->Get(context, String::NewFromUtf8(context->GetIsolate(),
+                                             "writable"));
+      Local<Boolean> writable = Local<Boolean>::Cast(
+          maybe_writable.ToLocalChecked());
+
+      if (!writable->BooleanValue()) {
+        attr += PropertyAttribute::ReadOnly;
+      }
+
+      sandbox->DefineOwnProperty(context, key, value,
+                                 static_cast<PropertyAttribute>(attr));
+
+    } else {
+      MaybeLocal<Value> maybe_getter = Local<Object>::Cast(desc)
+          ->Get(context, String::NewFromUtf8(context->GetIsolate(), "get"));
+      Local<Function> getter = Local<Function>::Cast(
+          maybe_getter.ToLocalChecked());
+
+      MaybeLocal<Value> maybe_setter = Local<Object>::Cast(desc)
+          ->Get(context, String::NewFromUtf8(context->GetIsolate(), "set"));
+      Local<Function> setter = Local<Function>::Cast(
+          maybe_setter.ToLocalChecked());
+
+      sandbox->SetAccessorProperty(key, getter, setter,
+                                   static_cast<PropertyAttribute>(attr));
+    }
   }
 };
 
@@ -606,14 +595,13 @@ class ContextifyScript : public BaseObject {
       TryCatch try_catch(env->isolate());
       // Do the eval within the context
       Context::Scope context_scope(contextify_context->context());
-      if (EvalMachine(contextify_context->env(),
+      EvalMachine(contextify_context->env(),
                       timeout,
                       display_errors,
                       break_on_sigint,
                       args,
-                      &try_catch)) {
-        contextify_context->CopyProperties();
-      }
+                      &try_catch);
+
 
       if (try_catch.HasCaught()) {
         try_catch.ReThrow();
