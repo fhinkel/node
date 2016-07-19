@@ -350,10 +350,6 @@ class ContextifyContext {
     Local<Object> sandbox = ctx->sandbox();
     MaybeLocal<Value> maybe_rv =
         sandbox->GetRealNamedProperty(context, property);
-    if (maybe_rv.IsEmpty()) {
-      maybe_rv =
-          ctx->global_proxy()->GetRealNamedProperty(context, property);
-    }
 
     Local<Value> rv;
     if (maybe_rv.ToLocal(&rv)) {
@@ -394,11 +390,6 @@ class ContextifyContext {
     Maybe<PropertyAttribute> maybe_prop_attr =
         ctx->sandbox()->GetRealNamedPropertyAttributes(context, property);
 
-    if (maybe_prop_attr.IsNothing()) {
-      maybe_prop_attr =
-          ctx->global_proxy()->GetRealNamedPropertyAttributes(context,
-                                                              property);
-    }
 
     if (maybe_prop_attr.IsJust()) {
       PropertyAttribute prop_attr = maybe_prop_attr.FromJust();
