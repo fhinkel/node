@@ -1482,11 +1482,12 @@ void ObjectTemplate::SetAccessor(v8::Local<Name> name,
 
 
 template <typename Getter, typename Setter, typename Query, typename Deleter,
-          typename Enumerator>
+          typename Enumerator, typename Definer>
 static void ObjectTemplateSetNamedPropertyHandler(ObjectTemplate* templ,
                                                   Getter getter, Setter setter,
                                                   Query query, Deleter remover,
                                                   Enumerator enumerator,
+                                                  Definer definer,
                                                   Local<Value> data,
                                                   PropertyHandlerFlags flags) {
   i::Isolate* isolate = Utils::OpenHandle(templ)->GetIsolate();
@@ -1503,6 +1504,7 @@ static void ObjectTemplateSetNamedPropertyHandler(ObjectTemplate* templ,
   if (query != 0) SET_FIELD_WRAPPED(obj, set_query, query);
   if (remover != 0) SET_FIELD_WRAPPED(obj, set_deleter, remover);
   if (enumerator != 0) SET_FIELD_WRAPPED(obj, set_enumerator, enumerator);
+  if (definer != 0) SET_FIELD_WRAPPED(obj, set_definer, definer);
   obj->set_can_intercept_symbols(
       !(static_cast<int>(flags) &
         static_cast<int>(PropertyHandlerFlags::kOnlyInterceptStrings)));
@@ -1524,7 +1526,7 @@ void ObjectTemplate::SetNamedPropertyHandler(
     NamedPropertyQueryCallback query, NamedPropertyDeleterCallback remover,
     NamedPropertyEnumeratorCallback enumerator, Local<Value> data) {
   ObjectTemplateSetNamedPropertyHandler(
-      this, getter, setter, query, remover, enumerator, data,
+      this, getter, setter, query, remover, enumerator, nullptr, data,
       PropertyHandlerFlags::kOnlyInterceptStrings);
 }
 
@@ -1533,7 +1535,7 @@ void ObjectTemplate::SetHandler(
     const NamedPropertyHandlerConfiguration& config) {
   ObjectTemplateSetNamedPropertyHandler(
       this, config.getter, config.setter, config.query, config.deleter,
-      config.enumerator, config.data, config.flags);
+      config.enumerator, config.definer, config.data, config.flags);
 }
 
 

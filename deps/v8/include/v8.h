@@ -4295,6 +4295,13 @@ typedef void (*GenericNamedPropertyEnumeratorCallback)(
 
 
 /**
+ * Returns a descriptor used in defineProperty().
+ */
+typedef void (*GenericNamedPropertyDefinerCallback)(
+    Local<Name> key, Local<Value> desc, const PropertyCallbackInfo<Value>& info);
+
+
+/**
  * Returns the value of the property if the getter intercepts the
  * request.  Otherwise, returns an empty handle.
  */
@@ -4601,6 +4608,7 @@ struct NamedPropertyHandlerConfiguration {
       GenericNamedPropertyQueryCallback query = 0,
       GenericNamedPropertyDeleterCallback deleter = 0,
       GenericNamedPropertyEnumeratorCallback enumerator = 0,
+      GenericNamedPropertyDefinerCallback definer = 0,
       Local<Value> data = Local<Value>(),
       PropertyHandlerFlags flags = PropertyHandlerFlags::kNone)
       : getter(getter),
@@ -4608,6 +4616,7 @@ struct NamedPropertyHandlerConfiguration {
         query(query),
         deleter(deleter),
         enumerator(enumerator),
+        definer(definer),
         data(data),
         flags(flags) {}
 
@@ -4616,6 +4625,7 @@ struct NamedPropertyHandlerConfiguration {
   GenericNamedPropertyQueryCallback query;
   GenericNamedPropertyDeleterCallback deleter;
   GenericNamedPropertyEnumeratorCallback enumerator;
+  GenericNamedPropertyDefinerCallback definer;
   Local<Value> data;
   PropertyHandlerFlags flags;
 };

@@ -6458,6 +6458,52 @@ Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
     it.Next();
   }
 
+  for (; it.IsFound(); it.Next()) {
+    Handle<JSObject> holder = it.GetHolder<JSObject>();
+    Handle<Object> result;
+    Handle<Object> receiver = it.GetReceiver();
+
+    if (it.state() == LookupIterator::INTERCEPTOR) {
+      DCHECK_EQ(LookupIterator::INTERCEPTOR, it.state());
+      Handle<InterceptorInfo> interceptor = it.GetInterceptor();
+      if (interceptor->setter()->IsUndefined()) {
+        return OrdinaryDefineOwnProperty(&it, desc, should_throw);
+      }
+
+      PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
+                                     *holder, Object::DONT_THROW);
+      if (!it.IsElement()) {
+        Handle < Name > name = it.name();
+        DCHECK(!name->IsPrivate());
+
+
+        if (name->IsSymbol() && !interceptor->can_intercept_symbols()) {
+          return OrdinaryDefineOwnProperty(&it, desc, should_throw);
+        }
+
+        v8::GenericNamedPropertyDefinerCallback definePropertyCallback =
+            v8::ToCData<v8::GenericNamedPropertyDefinerCallback>(
+                interceptor->definer());
+
+        Handle < Object > descriptor = handle(*desc->ToObject(isolate),
+                                              isolate);
+
+        result = args.Call(definePropertyCallback, name, descriptor);
+      }
+    }
+  }
+
+  it.Restart();
+  // Deal with access checks first.
+  if (it.state() == LookupIterator::ACCESS_CHECK) {
+    if (!it.HasAccess()) {
+      isolate->ReportFailedAccessCheck(it.GetHolder<JSObject>());
+      RETURN_VALUE_IF_SCHEDULED_EXCEPTION(isolate, Nothing<bool>());
+      return Just(true);
+    }
+    it.Next();
+  }
+
   return OrdinaryDefineOwnProperty(&it, desc, should_throw);
 }
 
