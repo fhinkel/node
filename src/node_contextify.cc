@@ -1,6 +1,5 @@
 #include "node.h"
 #include "node_watchdog.h"
-#include "base-object.h"
 #include "base-object-inl.h"
 #include "env.h"
 #include "util.h"
