@@ -323,11 +323,11 @@ class ContextifyContext {
   static ContextifyContext* ContextFromContextifiedSandbox(
       Environment* env,
       const Local<Object>& sandbox) {
-    auto maybe_value =
+    auto is_contextified =
         sandbox->GetPrivate(env->context(),
                             env->contextify_context_private_symbol());
     Local<Value> context_external_v;
-    if (maybe_value.ToLocal(&context_external_v) &&
+    if (is_contextified.ToLocal(&context_external_v) &&
         context_external_v->IsExternal()) {
       Local<External> context_external = context_external_v.As<External>();
       return static_cast<ContextifyContext*>(context_external->Value());
