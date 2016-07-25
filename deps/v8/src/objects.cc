@@ -5479,6 +5479,37 @@ MaybeHandle<Object> JSObject::DefinePropertyOrElementIgnoreAttributes(
   return DefineOwnPropertyIgnoreAttributes(&it, value, attributes);
 }
 
+void JSObject::GetDescriptorWithInterceptor(
+	  LookupIterator* it, PropertyDescriptor* desc) {
+  Isolate* isolate = it->isolate();
+  // Make sure that the top context does not change when doing
+  // callbacks or interceptor calls.
+  AssertNoContextChange ncc(isolate);
+  HandleScope scope(isolate);
+
+  Handle<JSObject> holder = it->GetHolder<JSObject>();
+  Handle<InterceptorInfo> interceptor(it->GetInterceptor());
+
+  Handle<Object> receiver = it->GetReceiver();
+  PropertyCallbackArguments args(isolate, interceptor->data(), *receiver,
+                                 *holder, Object::DONT_THROW);
+
+  if (!interceptor->query()->IsUndefined()) {
+    if (!it->IsElement()) {
+      Handle<Name> name = it->name();
+      DCHECK(!name->IsPrivate());
+      v8::GenericNamedPropertyQueryCallback query =
+          v8::ToCData<v8::GenericNamedPropertyQueryCallback>(
+              interceptor->query());
+      MaybeHandle<Object> result = args.Call(query, name);
+
+      PropertyDescriptor::ToPropertyDescriptor(isolate,
+                                               result.ToHandleChecked(), desc);
+    }
+  } else {
+    UNREACHABLE();
+  }
+}
 
 Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
     LookupIterator* it) {
@@ -5518,9 +5549,7 @@ Maybe<PropertyAttributes> JSObject::GetPropertyAttributesWithInterceptor(
       result = args.Call(query, name);
     }
     if (!result.is_null()) {
-      int32_t value;
-      CHECK(result->ToInt32(&value));
-      return Just(static_cast<PropertyAttributes>(value));
+      return Just(static_cast<PropertyAttributes>(0));
     }
   } else if (!interceptor->getter()->IsUndefined()) {
     // TODO(verwaest): Use GetPropertyWithInterceptor?
@@ -6485,7 +6514,7 @@ Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
             v8::ToCData<v8::GenericNamedPropertyDefinerCallback>(
                 interceptor->definer());
 
-        Handle < Object > descriptor = handle(*desc->ToObject(isolate),
+        Handle <Object> descriptor = handle(*desc->ToObject(isolate),
                                               isolate);
 
         result = args.Call(definePropertyCallback, name, descriptor);
@@ -7239,6 +7268,15 @@ Maybe<bool> JSReceiver::GetOwnPropertyDescriptor(LookupIterator* it,
     return JSProxy::GetOwnPropertyDescriptor(isolate, it->GetHolder<JSProxy>(),
                                              it->GetName(), desc);
   }
+
+  for (; it->IsFound(); it->Next()) {
+    if (it->state() == LookupIterator::INTERCEPTOR) {
+        JSObject::GetDescriptorWithInterceptor(it, desc);
+        return Just(true);
+    }
+  }
+
+  it->Restart();
 
   // 1. (Assert)
   // 2. If O does not have an own property with key P, return undefined.

@@ -2691,7 +2691,7 @@ static void EnvSetter(Local<String> property,
 
 
 static void EnvQuery(Local<String> property,
-                     const PropertyCallbackInfo<Integer>& info) {
+                     const PropertyCallbackInfo<Value>& info) {
   int32_t rc = -1;  // Not found unless proven otherwise.
 #ifdef __POSIX__
   node::Utf8Value key(info.GetIsolate(), property);

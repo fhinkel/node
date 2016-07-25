@@ -2181,6 +2181,9 @@ class JSObject: public JSReceiver {
   // Used from JSReceiver.
   MUST_USE_RESULT static Maybe<PropertyAttributes>
   GetPropertyAttributesWithInterceptor(LookupIterator* it);
+  
+  static void GetDescriptorWithInterceptor(LookupIterator* it,
+                                           PropertyDescriptor* desc);
   MUST_USE_RESULT static Maybe<PropertyAttributes>
       GetPropertyAttributesWithFailedAccessCheck(LookupIterator* it);
 

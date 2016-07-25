@@ -4228,7 +4228,7 @@ typedef void (*NamedPropertySetterCallback)(
  */
 typedef void (*NamedPropertyQueryCallback)(
     Local<String> property,
-    const PropertyCallbackInfo<Integer>& info);
+    const PropertyCallbackInfo<Value>& info);
 
 
 /**
@@ -4274,7 +4274,7 @@ typedef void (*GenericNamedPropertySetterCallback)(
  * v8::DontEnum, etc.)
  */
 typedef void (*GenericNamedPropertyQueryCallback)(
-    Local<Name> property, const PropertyCallbackInfo<Integer>& info);
+    Local<Name> property, const PropertyCallbackInfo<Value>& info);
 
 
 /**

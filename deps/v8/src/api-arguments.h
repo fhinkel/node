@@ -110,7 +110,6 @@ class PropertyCallbackArguments
 
 #define FOR_EACH_CALLBACK_TABLE_MAPPING_1_NAME(F)                  \
   F(AccessorNameGetterCallback, "get", v8::Value, Object)          \
-  F(GenericNamedPropertyQueryCallback, "has", v8::Integer, Object) \
   F(GenericNamedPropertyDeleterCallback, "delete", v8::Boolean, Object)
 
 #define WRITE_CALL_1_NAME(Function, type, ApiReturn, InternalReturn)         \

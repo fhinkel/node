@@ -310,7 +310,7 @@ class ContextifyContext {
 
   static void GlobalPropertyQueryCallback(
       Local<Name> property,
-      const PropertyCallbackInfo<Integer>& args) {
+      const PropertyCallbackInfo<Value>& args) {
     ContextifyContext* ctx;
     ASSIGN_OR_RETURN_UNWRAP(&ctx, args.Data().As<Object>());
 
@@ -319,13 +319,14 @@ class ContextifyContext {
       return;
 
     Local<Context> context = ctx->context();
-    Maybe<PropertyAttribute> maybe_prop_attr =
-        ctx->sandbox()->GetRealNamedPropertyAttributes(context, property);
 
+    MaybeLocal<Value> maybe_descriptor =
+        ctx->sandbox()->GetOwnPropertyDescriptor(context,
+                                                 Local<String>::Cast(property));
 
-    if (maybe_prop_attr.IsJust()) {
-      PropertyAttribute prop_attr = maybe_prop_attr.FromJust();
-      args.GetReturnValue().Set(prop_attr);
+    if (!maybe_descriptor.IsEmpty()) {
+      Local<Value> descriptor = maybe_descriptor.ToLocalChecked();
+      args.GetReturnValue().Set(descriptor);
     }
   }
 
