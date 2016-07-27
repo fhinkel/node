@@ -44,8 +44,14 @@ static Object* DeclareGlobals(Isolate* isolate, Handle<JSGlobalObject> global,
   }
 
   // Do the lookup own properties only, see ES5 erratum.
-  LookupIterator it(global, name, global,
-                    LookupIterator::HIDDEN_SKIP_INTERCEPTOR);
+  LookupIterator::Configuration configuration =
+      LookupIterator::Configuration::HIDDEN_SKIP_INTERCEPTOR;
+  if (is_function) {
+    // for function declarations, use the interceptor on the declaration,
+    // otherwise use it only on initialization
+    configuration = LookupIterator::Configuration::DEFAULT;
+  }
+  LookupIterator it(global, name, global, configuration);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
   if (!maybe.IsJust()) return isolate->heap()->exception();
 
