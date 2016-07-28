@@ -49,7 +49,8 @@ code =
     '    enumerable: false, ' +
     '    configurable: false, ' +
     '    value: 20 ' +
-    '  }); ' +
+    '  });' +
+    'global.x = 100' +
     '})()';
 
 var global = {};

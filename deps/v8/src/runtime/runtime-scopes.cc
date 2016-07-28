@@ -44,12 +44,14 @@ static Object* DeclareGlobals(Isolate* isolate, Handle<JSGlobalObject> global,
   }
 
   // Do the lookup own properties only, see ES5 erratum.
-  LookupIterator::Configuration configuration =
-      LookupIterator::Configuration::HIDDEN_SKIP_INTERCEPTOR;
+  LookupIterator::Configuration configuration(
+      LookupIterator::Configuration::HIDDEN_SKIP_INTERCEPTOR);
+  Object::ShouldThrow should_throw(Object::ShouldThrow::THROW_ON_ERROR);
   if (is_function) {
     // for function declarations, use the interceptor on the declaration,
     // otherwise use it only on initialization
     configuration = LookupIterator::Configuration::DEFAULT;
+    should_throw = Object::ShouldThrow::DONT_THROW;
   }
   LookupIterator it(global, name, global, configuration);
   Maybe<PropertyAttributes> maybe = JSReceiver::GetPropertyAttributes(&it);
@@ -91,8 +93,11 @@ static Object* DeclareGlobals(Isolate* isolate, Handle<JSGlobalObject> global,
   }
 
   // Define or redefine own property.
+  Maybe<bool> res = JSObject::DefineOwnPropertyIgnoreAttributes(
+      &it, value, attr, should_throw);
+
   RETURN_FAILURE_ON_EXCEPTION(
-      isolate, JSObject::DefineOwnPropertyIgnoreAttributes(&it, value, attr));
+      isolate, res.IsNothing() ? MaybeHandle<Object>() : value);
 
   return isolate->heap()->undefined_value();
 }

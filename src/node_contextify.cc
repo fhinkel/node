@@ -303,7 +303,15 @@ class ContextifyContext {
     if (ctx->context_.IsEmpty())
       return;
 
-    ctx->sandbox()->Set(property, value);
+    Maybe<bool> has = ctx->global_proxy()->
+        HasRealNamedProperty(ctx->context(), property);
+
+    bool isContextualStore = ctx->global_proxy() != args.This();
+
+    if (!args.ShouldThrowOnError() || has.FromJust()
+        || !isContextualStore ) {
+      ctx->sandbox()->Set(property, value);
+    }
   }
 
 
