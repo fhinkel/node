@@ -28,7 +28,7 @@ using v8::NamedPropertyHandlerConfiguration;
 using v8::Object;
 using v8::ObjectTemplate;
 using v8::Persistent;
-using v8::PropertyAttribute;
+using v8::PropDescriptor;
 using v8::PropertyCallbackInfo;
 using v8::Script;
 using v8::ScriptCompiler;
@@ -369,7 +369,7 @@ class ContextifyContext {
 
   static void GlobalPropertyDefinerCallback(
       Local<Name> key,
-      Local<Value> desc,
+      PropDescriptor* desc,
       const PropertyCallbackInfo<Value>& args) {
     ContextifyContext* ctx;
     ASSIGN_OR_RETURN_UNWRAP(&ctx, args.Data().As<Object>());
@@ -381,60 +381,9 @@ class ContextifyContext {
     Local<Context> context = ctx->context();
     Local<Object> sandbox = ctx->sandbox();
 
-    MaybeLocal<Value> maybe_enumerable = Local<Object>::Cast(desc)
-        ->Get(context, String::NewFromUtf8(context->GetIsolate(),
-                                           "enumerable"));
-    Local<Boolean> enumerable = Local<Boolean>::Cast(
-        maybe_enumerable.ToLocalChecked());
-
-    MaybeLocal<Value> maybe_configurable = Local<Object>::Cast(desc)
-        ->Get(context, String::NewFromUtf8(context->GetIsolate(),
-                                           "configurable"));
-    Local<Boolean> configurable = Local<Boolean>::Cast(
-        maybe_configurable.ToLocalChecked());
-
-    int attr = PropertyAttribute::None;
-
-    if (!enumerable->BooleanValue()) {
-      attr += PropertyAttribute::DontEnum;
-    }
-
-    if (!configurable->BooleanValue()) {
-      attr += PropertyAttribute::DontDelete;
-    }
-
-    MaybeLocal<Value> maybe_value = Local<Object>::Cast(desc)
-        ->Get(context, String::NewFromUtf8(context->GetIsolate(), "value"));
-    Local<Value> value = maybe_value.ToLocalChecked();
-
-    if (!value->IsUndefined()) {
-      MaybeLocal<Value> maybe_writable = Local<Object>::Cast(desc)
-          ->Get(context, String::NewFromUtf8(context->GetIsolate(),
-                                             "writable"));
-      Local<Boolean> writable = Local<Boolean>::Cast(
-          maybe_writable.ToLocalChecked());
-
-      if (!writable->BooleanValue()) {
-        attr += PropertyAttribute::ReadOnly;
-      }
-
-      sandbox->DefineOwnProperty(context, key, value,
-                                 static_cast<PropertyAttribute>(attr));
-
-    } else {
-      MaybeLocal<Value> maybe_getter = Local<Object>::Cast(desc)
-          ->Get(context, String::NewFromUtf8(context->GetIsolate(), "get"));
-      Local<Function> getter = Local<Function>::Cast(
-          maybe_getter.ToLocalChecked());
-
-      MaybeLocal<Value> maybe_setter = Local<Object>::Cast(desc)
-          ->Get(context, String::NewFromUtf8(context->GetIsolate(), "set"));
-      Local<Function> setter = Local<Function>::Cast(
-          maybe_setter.ToLocalChecked());
-
-      sandbox->SetAccessorProperty(key, getter, setter,
-                                   static_cast<PropertyAttribute>(attr));
-    }
+    // Todo(fhinkel): Do not define if it will
+    // fail inside script
+    sandbox->DefineProperty(context, key, desc);
   }
 };
 

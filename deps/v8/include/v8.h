@@ -94,6 +94,7 @@ class ObjectTemplate;
 class Platform;
 class Primitive;
 class Promise;
+class PropDescriptor;
 class Proxy;
 class RawOperationDescriptor;
 class Script;
@@ -152,6 +153,7 @@ class Object;
 struct StreamedSource;
 template<typename T> class CustomArguments;
 class PropertyCallbackArguments;
+class PropertyDescriptor;
 class FunctionCallbackArguments;
 class GlobalHandles;
 }  // namespace internal
@@ -2683,6 +2685,11 @@ class V8_EXPORT Object : public Value {
       Local<Context> context, Local<Name> key, Local<Value> value,
       PropertyAttribute attributes = None);
 
+  // Define a Property ES6 style with a PropertyDescriptor
+  Maybe<bool> DefineProperty(
+      Local<Context> context, Local<Name> key, PropDescriptor* desc);
+
+
   // Sets an own property on this object bypassing interceptors and
   // overriding accessors or read-only properties.
   //
@@ -3014,6 +3021,11 @@ class V8_EXPORT Object : public Value {
   void* SlowGetAlignedPointerFromInternalField(int index);
 };
 
+/*
+ * An instance of a PropertyDescriptor (ECMA-262 6.2.4)
+ */
+class V8_EXPORT PropDescriptor {
+};
 
 /**
  * An instance of the built-in array constructor (ECMA-262, 15.4.2).
@@ -3111,6 +3123,7 @@ class V8_EXPORT Set : public Object {
   Set();
   static void CheckCast(Value* obj);
 };
+
 
 
 template<typename T>
@@ -4298,7 +4311,8 @@ typedef void (*GenericNamedPropertyEnumeratorCallback)(
  * Returns a descriptor used in defineProperty().
  */
 typedef void (*GenericNamedPropertyDefinerCallback)(
-    Local<Name> key, Local<Value> desc, const PropertyCallbackInfo<Value>& info);
+    Local<Name> key, PropDescriptor* desc,
+    const PropertyCallbackInfo<Value>& info);
 
 
 /**
