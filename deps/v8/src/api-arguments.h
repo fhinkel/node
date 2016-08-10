@@ -163,18 +163,6 @@ class PropertyCallbackArguments
     return GetReturnValue<Object>(isolate);
   }
 
-
-  Handle<Object> Call(GenericNamedPropertyDefinerCallback f, Handle<Name> name,
-                      PropertyDescriptor* desc) {
-    Isolate* isolate = this->isolate();
-    VMState<EXTERNAL> state(isolate);
-    ExternalCallbackScope call_scope(isolate, FUNCTION_ADDR(f));
-    PropertyCallbackInfo<v8::Value> info(begin());
-    LOG(isolate,
-        ApiNamedPropertyAccess("interceptor-named-definer", holder(), *name));
-    f(v8::Utils::ToLocal(name), reinterpret_cast<v8::PropDescriptor*>(desc), info);
-    return GetReturnValue<Object>(isolate);  }
-
   Handle<Object> Call(IndexedPropertySetterCallback f, uint32_t index,
                       Handle<Object> value) {
     Isolate* isolate = this->isolate();
