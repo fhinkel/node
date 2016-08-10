@@ -2683,6 +2683,20 @@ class V8_EXPORT Object : public Value {
       Local<Context> context, Local<Name> key, Local<Value> value,
       PropertyAttribute attributes = None);
 
+
+  // Implements Object.DefineProperty().
+
+  // Define a Property ES6 style with a PropertyDescriptor, i.e.,
+  // value or getter and setter, and property attributes
+  //
+  // In general, CreateDataProperty will be faster, however, does not allow
+  // for specifying attributes, setters, or getters.
+  //
+  // Returns true on success.
+  V8_WARN_UNUSED_RESULT Maybe<bool> DefineProperty(
+      Local<Context> context, Local<Name> key, Local<Value> desc);
+
+
   // Sets an own property on this object bypassing interceptors and
   // overriding accessors or read-only properties.
   //
@@ -3111,6 +3125,7 @@ class V8_EXPORT Set : public Object {
   Set();
   static void CheckCast(Value* obj);
 };
+
 
 
 template<typename T>
@@ -4295,7 +4310,8 @@ typedef void (*GenericNamedPropertyEnumeratorCallback)(
 
 
 /**
- * Returns a descriptor used in defineProperty().
+ * Returns the value of the property descriptor if the definer
+ * intercepts the request.
  */
 typedef void (*GenericNamedPropertyDefinerCallback)(
     Local<Name> key, Local<Value> desc, const PropertyCallbackInfo<Value>& info);

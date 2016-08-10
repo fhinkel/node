@@ -66,7 +66,6 @@
 #include "src/version.h"
 #include "src/vm-state-inl.h"
 
-
 namespace v8 {
 
 #define LOG_API(isolate, expr) LOG(isolate, ApiEntryCall(expr))
@@ -3618,6 +3617,33 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
   RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
   return result;
 }
+
+Maybe<bool> v8::Object::DefineProperty(v8::Local<v8::Context> context,
+                                       v8::Local<Name> key,
+                                       v8::Local<Value> desc) {
+  PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::DefineProperty()",
+                                bool);
+  i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
+  i::Handle<i::Name> key_obj = Utils::OpenHandle(*key);
+
+  i::PropertyDescriptor desc_obj;
+  i::PropertyDescriptor::ToPropertyDescriptor(isolate,
+      Utils::OpenHandle(*desc), &desc_obj);
+
+  if (self->IsAccessCheckNeeded() &&
+      !isolate->MayAccess(handle(isolate->context()),
+      i::Handle<i::JSObject>::cast(self))) {
+    isolate->ReportFailedAccessCheck(i::Handle<i::JSObject>::cast(self));
+    return Nothing<bool>();
+  }
+
+  Maybe<bool> success = i::JSReceiver::DefineOwnProperty(
+    isolate, self, key_obj, &desc_obj, i::Object::DONT_THROW);
+  // Even though we said DONT_THROW, there might be accessors that do throw.
+  RETURN_ON_FAILED_EXECUTION_PRIMITIVE(bool);
+  return success;
+}
+
 
 
 Maybe<bool> v8::Object::DefineOwnProperty(v8::Local<v8::Context> context,
