@@ -3620,15 +3620,24 @@ Maybe<bool> v8::Object::CreateDataProperty(v8::Local<v8::Context> context,
 
 Maybe<bool> v8::Object::DefineProperty(v8::Local<v8::Context> context,
                                        v8::Local<Name> key,
-                                       v8::Local<Value> desc) {
+                                       PropDescriptor* desc) {
   PREPARE_FOR_EXECUTION_PRIMITIVE(context, "v8::Object::DefineProperty()",
                                 bool);
   i::Handle<i::JSReceiver> self = Utils::OpenHandle(this);
   i::Handle<i::Name> key_obj = Utils::OpenHandle(*key);
 
   i::PropertyDescriptor desc_obj;
-  i::PropertyDescriptor::ToPropertyDescriptor(isolate,
-      Utils::OpenHandle(*desc), &desc_obj);
+
+  if (desc->isData()) {
+    desc_obj.set_writable(desc->writable());
+    desc_obj.set_value(Utils::OpenHandle(*desc->value()));
+  } else if (desc->isAccessor()) {
+    desc_obj.set_get(Utils::OpenHandle(*desc->get()));
+    desc_obj.set_set(Utils::OpenHandle(*desc->set()));
+  }
+
+  desc_obj.set_enumerable(desc->enumerable());
+  desc_obj.set_configurable(desc->configurable());
 
   if (self->IsAccessCheckNeeded() &&
       !isolate->MayAccess(handle(isolate->context()),

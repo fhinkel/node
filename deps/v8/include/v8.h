@@ -94,6 +94,7 @@ class ObjectTemplate;
 class Platform;
 class Primitive;
 class Promise;
+class PropDescriptor;
 class Proxy;
 class RawOperationDescriptor;
 class Script;
@@ -2694,7 +2695,7 @@ class V8_EXPORT Object : public Value {
   //
   // Returns true on success.
   V8_WARN_UNUSED_RESULT Maybe<bool> DefineProperty(
-      Local<Context> context, Local<Name> key, Local<Value> desc);
+      Local<Context> context, Local<Name> key, PropDescriptor* desc);
 
 
   // Sets an own property on this object bypassing interceptors and
@@ -3253,6 +3254,56 @@ class PropertyCallbackInfo {
   internal::Object** args_;
 };
 
+class PropDescriptor{
+ public:
+  PropDescriptor(bool enumerable = false,
+                 bool configurable = false, bool writable = false) {
+    // Generic descriptor
+    enumerable_ = enumerable;
+    configurable_ = configurable;
+    writable_ = writable;
+  };
+
+  PropDescriptor(Local<Value> value, bool enumerable = false,
+                 bool configurable = false, bool writable = false) {
+    value_ = value;
+    enumerable_ = enumerable;
+    configurable_ = configurable;
+    writable_ = writable;
+  };
+
+  PropDescriptor(Local<Value> get, Local<Value> set,
+                 bool enumerable = false,
+                 bool configurable = false, bool writable = false) {
+    get_ = get;
+    set_ = set;
+    enumerable_ = enumerable;
+    configurable_ = configurable;
+    writable_ = writable;
+  };
+
+  Local<Value> value() const {
+    return value_;
+  };
+
+  Local<Value> get() const{ return get_;};
+  Local<Value> set() const{ return set_;};
+
+  bool isAccessor() {return (!get_.IsEmpty() || !set_.IsEmpty());};
+  bool isData() {return !value_.IsEmpty();};
+
+  bool enumerable() const {return enumerable_;};
+  bool configurable() const {return configurable_;};
+  bool writable() const {return writable_;};
+
+ private:
+  Local<Value> value_;
+  Local<Value> set_;
+  Local<Value> get_;
+  bool enumerable_;
+  bool configurable_;
+  bool writable_;
+};
 
 typedef void (*FunctionCallback)(const FunctionCallbackInfo<Value>& info);
 
@@ -4314,7 +4365,7 @@ typedef void (*GenericNamedPropertyEnumeratorCallback)(
  * intercepts the request.
  */
 typedef void (*GenericNamedPropertyDefinerCallback)(
-    Local<Name> key, Local<Value> desc, const PropertyCallbackInfo<Value>& info);
+    Local<Name> key, PropDescriptor* desc, const PropertyCallbackInfo<Value>& info);
 
 
 /**

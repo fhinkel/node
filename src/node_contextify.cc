@@ -28,6 +28,7 @@ using v8::NamedPropertyHandlerConfiguration;
 using v8::Object;
 using v8::ObjectTemplate;
 using v8::Persistent;
+using v8::PropDescriptor;
 using v8::PropertyCallbackInfo;
 using v8::Script;
 using v8::ScriptCompiler;
@@ -368,7 +369,7 @@ class ContextifyContext {
 
   static void GlobalPropertyDefinerCallback(
       Local<Name> key,
-      Local<Value> desc,
+      PropDescriptor* desc,
       const PropertyCallbackInfo<Value>& args) {
     ContextifyContext* ctx;
     ASSIGN_OR_RETURN_UNWRAP(&ctx, args.Data().As<Object>());

@@ -6514,10 +6514,23 @@ Maybe<bool> JSReceiver::OrdinaryDefineOwnProperty(Isolate* isolate,
             v8::ToCData<v8::GenericNamedPropertyDefinerCallback>(
                 interceptor->definer());
 
-        Handle <Object> descriptor = handle(*desc->ToObject(isolate),
-                                              isolate);
+        v8::PropDescriptor propDescriptor;
+        if (PropertyDescriptor::IsAccessorDescriptor(desc)) {
+          propDescriptor = v8::PropDescriptor(v8::Utils::ToLocal(desc->get()),
+                                              v8::Utils::ToLocal(desc->set()),
+          desc->enumerable(), desc->configurable(), desc->writable());
+        }
+        else if (PropertyDescriptor::IsDataDescriptor(desc)) {
+          propDescriptor = v8::PropDescriptor(v8::Utils::ToLocal(desc->value()),
+            desc->enumerable(), desc->configurable(), desc->writable());
+        }
+        else {
+          propDescriptor = v8::PropDescriptor(desc->enumerable(),
+                                              desc->configurable(),
+                                              desc->writable());
+        }
 
-        result = args.Call(definePropertyCallback, name, descriptor);
+        result = args.Call(definePropertyCallback, name, &propDescriptor);
       }
     }
   }

@@ -9,6 +9,7 @@
 #include "src/isolate.h"
 #include "src/tracing/trace-event.h"
 #include "src/vm-state-inl.h"
+#include "src/property-descriptor.h"
 
 namespace v8 {
 namespace internal {
@@ -150,6 +151,19 @@ class PropertyCallbackArguments
 
 #undef FOR_EACH_CALLBACK_TABLE_MAPPING_1_INDEX
 #undef WRITE_CALL_1_INDEX
+
+Handle<Object> Call(GenericNamedPropertyDefinerCallback f, Handle<Name> name,
+                    v8::PropDescriptor* desc) {
+  Isolate* isolate = this->isolate();
+  VMState<EXTERNAL> state(isolate);
+  ExternalCallbackScope call_scope(isolate, FUNCTION_ADDR(f));
+  PropertyCallbackInfo<v8::Value> info(begin());
+  LOG(isolate,
+      ApiNamedPropertyAccess("interceptor-named-definer", holder(), *name));
+
+  f(v8::Utils::ToLocal(name), desc, info);
+  return GetReturnValue<Object>(isolate);
+}
 
   Handle<Object> Call(GenericNamedPropertySetterCallback f, Handle<Name> name,
                       Handle<Object> value) {
