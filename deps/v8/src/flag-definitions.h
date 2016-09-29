@@ -198,7 +198,6 @@ DEFINE_IMPLICATION(es_staging, move_object_start)
   V(harmony_function_sent, "harmony function.sent")                     \
   V(harmony_sharedarraybuffer, "harmony sharedarraybuffer")             \
   V(harmony_simd, "harmony simd")                                       \
-  V(harmony_explicit_tailcalls, "harmony explicit tail calls")          \
   V(harmony_do_expressions, "harmony do-expressions")                   \
   V(harmony_restrictive_generators,                                     \
     "harmony restrictions on generator declarations")                   \
@@ -532,6 +531,8 @@ DEFINE_BOOL(wasm_simd_prototype, false,
             "enable prototype simd opcodes for wasm")
 DEFINE_BOOL(wasm_eh_prototype, false,
             "enable prototype exception handling opcodes for wasm")
+DEFINE_BOOL(wasm_mv_prototype, false,
+            "enable prototype multi-value support for wasm")
 
 DEFINE_BOOL(wasm_trap_handler, false,
             "use signal handlers to catch out of bounds memory access in wasm"
@@ -713,8 +714,6 @@ DEFINE_BOOL(trace_idle_notification, false,
             "print one trace line following each idle notification")
 DEFINE_BOOL(trace_idle_notification_verbose, false,
             "prints the heap state used by the idle notification")
-DEFINE_BOOL(print_cumulative_gc_stat, false,
-            "print cumulative GC statistics in name=value format on exit")
 DEFINE_BOOL(print_max_heap_committed, false,
             "print statistics of the maximum memory committed for the heap "
             "in name=value format on exit")
@@ -802,7 +801,7 @@ DEFINE_BOOL(use_idle_notification, true,
 DEFINE_BOOL(use_ic, true, "use inline caching")
 DEFINE_BOOL(trace_ic, false, "trace inline cache state transitions")
 DEFINE_BOOL(tf_load_ic_stub, true, "use TF LoadIC stub")
-DEFINE_BOOL(tf_store_ic_stub, false, "use TF StoreIC stub")
+DEFINE_BOOL(tf_store_ic_stub, true, "use TF StoreIC stub")
 
 // macro-assembler-ia32.cc
 DEFINE_BOOL(native_code_counters, false,
@@ -838,6 +837,7 @@ DEFINE_BOOL(trace_maps, false, "trace map creation")
 // parser.cc
 DEFINE_BOOL(allow_natives_syntax, false, "allow natives syntax")
 DEFINE_BOOL(trace_parse, false, "trace parsing and preparsing")
+DEFINE_BOOL(lazy_inner_functions, false, "enable lazy parsing inner functions")
 
 // simulator-arm.cc, simulator-arm64.cc and simulator-mips.cc
 DEFINE_BOOL(trace_sim, false, "Trace simulator execution")
@@ -1124,6 +1124,7 @@ DEFINE_BOOL(test_primary_stub_cache, false,
 // codegen-ia32.cc / codegen-arm.cc
 DEFINE_BOOL(print_code, false, "print generated code")
 DEFINE_BOOL(print_opt_code, false, "print optimized code")
+DEFINE_STRING(print_opt_code_filter, "*", "filter for printing optimized code")
 DEFINE_BOOL(print_unopt_code, false,
             "print unoptimized code before "
             "printing optimized code based on it")

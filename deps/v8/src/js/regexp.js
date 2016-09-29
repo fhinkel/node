@@ -178,11 +178,20 @@ function RegExpExecJS(string) {
   var sticky = TO_BOOLEAN(REGEXP_STICKY(this));
   var updateLastIndex = global || sticky;
   if (updateLastIndex) {
-    lastIndex = TO_LENGTH(this.lastIndex);
+    // TODO(jgruber): This is actually ToLength in the spec, but we bailout
+    // to the runtime in %_RegExpExec if lastIndex is not a Smi, so we are
+    // smart here and trick both TurboFan and Crankshaft to produce a Smi.
+    // This is a terrible hack, and correct for subtle reasons; it's a clear
+    // indicator that we need a predictable RegExp implementation where we
+    // don't need to add specific work-arounds for certain compiler issues.
+    lastIndex = +this.lastIndex;
     if (lastIndex > string.length) {
       this.lastIndex = 0;
       return null;
+    } else if (lastIndex <= 0) {
+      lastIndex = 0;
     }
+    lastIndex = lastIndex|0;
   } else {
     lastIndex = 0;
   }
@@ -344,9 +353,8 @@ function RegExpSubclassSplit(string, limit) {
 
   // TODO(adamk): this fast path is wrong as we doesn't ensure that 'exec'
   // is actually a data property on RegExp.prototype.
-  var exec;
   if (IS_REGEXP(this) && constructor === GlobalRegExp) {
-    exec = this.exec;
+    var exec = this.exec;
     if (exec === RegExpExecJS) {
       return %_Call(RegExpSplit, this, string, limit);
     }
@@ -371,9 +379,7 @@ function RegExpSubclassSplit(string, limit) {
   var stringIndex = prevStringIndex;
   while (stringIndex < size) {
     splitter.lastIndex = stringIndex;
-    result = RegExpSubclassExec(splitter, string, exec);
-    // Ensure exec will be read again on the next loop through.
-    exec = UNDEFINED;
+    result = RegExpSubclassExec(splitter, string);
     if (IS_NULL(result)) {
       stringIndex += AdvanceStringIndex(string, stringIndex, unicode);
     } else {

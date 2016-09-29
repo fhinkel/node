@@ -2,12 +2,5 @@
 // Use of this source code is governed by a BSD-style license that can be
 // found in the LICENSE file.
 
-// Flags: --harmony-explicit-tailcalls
-
-function f() {
-  return 1;
-}
-
-function g() {
-  return continue new f()  ;
-}
+var iterator = [].entries().__proto__.__proto__[Symbol.iterator];
+print(1/iterator(-1E-300));

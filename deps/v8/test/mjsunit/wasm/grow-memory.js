@@ -18,19 +18,22 @@ function genGrowMemoryBuilder() {
       .addBody([kExprGetLocal, 0, kExprI32LoadMem, 0, 0])
       .exportFunc();
   builder.addFunction("store", kSig_i_ii)
-      .addBody([kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem, 0, 0])
+      .addBody([kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem, 0, 0,
+                kExprGetLocal, 1])
       .exportFunc();
   builder.addFunction("load16", kSig_i_i)
       .addBody([kExprGetLocal, 0, kExprI32LoadMem16U, 0, 0])
       .exportFunc();
   builder.addFunction("store16", kSig_i_ii)
-      .addBody([kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem16, 0, 0])
+      .addBody([kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem16, 0, 0,
+                kExprGetLocal, 1])
       .exportFunc();
   builder.addFunction("load8", kSig_i_i)
       .addBody([kExprGetLocal, 0, kExprI32LoadMem8U, 0, 0])
       .exportFunc();
   builder.addFunction("store8", kSig_i_ii)
-      .addBody([kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem8, 0, 0])
+      .addBody([kExprGetLocal, 0, kExprGetLocal, 1, kExprI32StoreMem8, 0, 0,
+                kExprGetLocal, 1])
       .exportFunc();
   return builder;
 }
@@ -244,9 +247,9 @@ function testGrowMemoryCurrentMemory() {
   var module = builder.instantiate();
   function growMem(pages) { return module.exports.grow_memory(pages); }
   function MemSize() { return module.exports.memory_size(); }
-  assertEquals(65536, MemSize());
+  assertEquals(1, MemSize());
   assertEquals(1, growMem(1));
-  assertEquals(131072, MemSize());
+  assertEquals(2, MemSize());
 }
 
 testGrowMemoryCurrentMemory();
@@ -323,3 +326,35 @@ function testGrowMemoryPreservesDataMemOp8() {
 }
 
 testGrowMemoryPreservesDataMemOp8();
+
+function testGrowMemoryOutOfBoundsOffset() {
+  var builder = genGrowMemoryBuilder();
+  builder.addMemory(1, 1, false);
+  var module = builder.instantiate();
+  var offset, val;
+  function peek() { return module.exports.load(offset); }
+  function poke(value) { return module.exports.store(offset, value); }
+  function growMem(pages) { return module.exports.grow_memory(pages); }
+
+  offset = 3*kPageSize + 4;
+  assertTraps(kTrapMemOutOfBounds, poke);
+
+  assertEquals(1, growMem(1));
+  assertTraps(kTrapMemOutOfBounds, poke);
+
+  assertEquals(2, growMem(1));
+  assertTraps(kTrapMemOutOfBounds, poke);
+
+  assertEquals(3, growMem(1));
+
+  for (offset = 3*kPageSize; offset <= 4*kPageSize - 4; offset++) {
+    poke(0xaced);
+    assertEquals(0xaced, peek());
+  }
+
+  for (offset = 4*kPageSize - 3; offset <= 4*kPageSize + 4; offset++) {
+    assertTraps(kTrapMemOutOfBounds, poke);
+  }
+}
+
+testGrowMemoryOutOfBoundsOffset();

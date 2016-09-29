@@ -1319,7 +1319,7 @@ bool PagedSpace::Expand() {
   Page* p = heap()->memory_allocator()->AllocatePage(size, this, executable());
   if (p == nullptr) return false;
 
-  AccountCommitted(static_cast<intptr_t>(p->size()));
+  AccountCommitted(p->size());
 
   // Pages created during bootstrapping may contain immortal immovable objects.
   if (!heap()->deserialization_complete()) p->MarkNeverEvacuate();
@@ -1426,9 +1426,13 @@ void PagedSpace::ReleasePage(Page* page) {
     page->Unlink();
   }
 
-  AccountUncommitted(static_cast<intptr_t>(page->size()));
+  AccountUncommitted(page->size());
   accounting_stats_.ShrinkSpace(page->area_size());
   heap()->memory_allocator()->Free<MemoryAllocator::kPreFreeAndQueue>(page);
+}
+
+std::unique_ptr<ObjectIterator> PagedSpace::GetObjectIterator() {
+  return std::unique_ptr<ObjectIterator>(new HeapObjectIterator(this));
 }
 
 #ifdef DEBUG
@@ -1485,8 +1489,9 @@ void PagedSpace::Verify(ObjectVisitor* visitor) {
 
 bool NewSpace::SetUp(int initial_semispace_capacity,
                      int maximum_semispace_capacity) {
-  DCHECK(initial_semispace_capacity <= maximum_semispace_capacity);
+  DCHECK_LE(initial_semispace_capacity, maximum_semispace_capacity);
   DCHECK(base::bits::IsPowerOfTwo32(maximum_semispace_capacity));
+  DCHECK_GE(initial_semispace_capacity, 2 * Page::kPageSize);
 
   to_space_.SetUp(initial_semispace_capacity, maximum_semispace_capacity);
   from_space_.SetUp(initial_semispace_capacity, maximum_semispace_capacity);
@@ -1551,7 +1556,7 @@ void NewSpace::Grow() {
 
 
 void NewSpace::Shrink() {
-  int new_capacity = Max(InitialTotalCapacity(), 2 * SizeAsInt());
+  int new_capacity = Max(InitialTotalCapacity(), 2 * static_cast<int>(Size()));
   int rounded_new_capacity = RoundUp(new_capacity, Page::kPageSize);
   if (rounded_new_capacity < TotalCapacity() &&
       to_space_.ShrinkTo(rounded_new_capacity)) {
@@ -1587,8 +1592,16 @@ bool SemiSpace::EnsureCurrentCapacity() {
       current_page = current_page->next_page();
       if (actual_pages > expected_pages) {
         Page* to_remove = current_page->prev_page();
-        // Make sure we don't overtake the actual top pointer.
-        CHECK_NE(to_remove, current_page_);
+        if (to_remove == current_page_) {
+          // Corner case: All pages have been moved within new space. We are
+          // removing the page that contains the top pointer and need to set
+          // it to the end of the intermediate generation.
+          NewSpace* new_space = heap()->new_space();
+          CHECK_EQ(new_space->top(), current_page_->area_start());
+          current_page_ = to_remove->prev_page();
+          CHECK(current_page_->InIntermediateGeneration());
+          new_space->SetAllocationInfo(page_high(), page_high());
+        }
         to_remove->Unlink();
         heap()->memory_allocator()->Free<MemoryAllocator::kPooledAndQueue>(
             to_remove);
@@ -1817,6 +1830,10 @@ void NewSpace::InlineAllocationStep(Address top, Address new_top,
   }
 }
 
+std::unique_ptr<ObjectIterator> NewSpace::GetObjectIterator() {
+  return std::unique_ptr<ObjectIterator>(new SemiSpaceIterator(this));
+}
+
 #ifdef VERIFY_HEAP
 // We do not use the SemiSpaceIterator because verification doesn't assume
 // that it works (it depends on the invariants we are checking).
@@ -1914,9 +1931,6 @@ bool SemiSpace::Commit() {
   }
   Reset();
   AccountCommitted(current_capacity_);
-  if (age_mark_ == nullptr) {
-    age_mark_ = first_page()->area_start();
-  }
   committed_ = true;
   return true;
 }
@@ -1973,7 +1987,7 @@ bool SemiSpace::GrowTo(int new_capacity) {
     new_page->SetFlags(last_page->GetFlags(), Page::kCopyOnFlipFlagsMask);
     last_page = new_page;
   }
-  AccountCommitted(static_cast<intptr_t>(delta));
+  AccountCommitted(delta);
   current_capacity_ = new_capacity;
   return true;
 }
@@ -2010,7 +2024,7 @@ bool SemiSpace::ShrinkTo(int new_capacity) {
           last_page);
       delta_pages--;
     }
-    AccountUncommitted(static_cast<intptr_t>(delta));
+    AccountUncommitted(delta);
     heap()->memory_allocator()->unmapper()->FreeQueuedChunks();
   }
   current_capacity_ = new_capacity;
@@ -2028,7 +2042,7 @@ void SemiSpace::FixPagesFlags(intptr_t flags, intptr_t mask) {
     if (id_ == kToSpace) {
       page->ClearFlag(MemoryChunk::IN_FROM_SPACE);
       page->SetFlag(MemoryChunk::IN_TO_SPACE);
-      page->ClearFlag(MemoryChunk::NEW_SPACE_BELOW_AGE_MARK);
+      page->ClearFlag(MemoryChunk::IN_INTERMEDIATE_GENERATION);
       page->ResetLiveBytes();
     } else {
       page->SetFlag(MemoryChunk::IN_FROM_SPACE);
@@ -2071,7 +2085,6 @@ void SemiSpace::Swap(SemiSpace* from, SemiSpace* to) {
   std::swap(from->current_capacity_, to->current_capacity_);
   std::swap(from->maximum_capacity_, to->maximum_capacity_);
   std::swap(from->minimum_capacity_, to->minimum_capacity_);
-  std::swap(from->age_mark_, to->age_mark_);
   std::swap(from->committed_, to->committed_);
   std::swap(from->anchor_, to->anchor_);
   std::swap(from->current_page_, to->current_page_);
@@ -2080,16 +2093,45 @@ void SemiSpace::Swap(SemiSpace* from, SemiSpace* to) {
   from->FixPagesFlags(0, 0);
 }
 
+void NewSpace::SealIntermediateGeneration() {
+  fragmentation_in_intermediate_generation_ = 0;
+  const Address mark = top();
 
-void SemiSpace::set_age_mark(Address mark) {
-  DCHECK_EQ(Page::FromAllocationAreaAddress(mark)->owner(), this);
-  age_mark_ = mark;
-  // Mark all pages up to the one containing mark.
-  for (Page* p : NewSpacePageRange(space_start(), mark)) {
-    p->SetFlag(MemoryChunk::NEW_SPACE_BELOW_AGE_MARK);
+  if (mark == to_space_.space_start()) {
+    // Do not mark any pages as being part of the intermediate generation if no
+    // objects got moved.
+    return;
+  }
+
+  for (Page* p : NewSpacePageRange(to_space_.space_start(), mark)) {
+    p->SetFlag(MemoryChunk::IN_INTERMEDIATE_GENERATION);
+  }
+
+  Page* p = Page::FromAllocationAreaAddress(mark);
+  if (mark < p->area_end()) {
+    heap()->CreateFillerObjectAt(mark, static_cast<int>(p->area_end() - mark),
+                                 ClearRecordedSlots::kNo);
+    fragmentation_in_intermediate_generation_ =
+        static_cast<size_t>(p->area_end() - mark);
+    DCHECK_EQ(to_space_.current_page(), p);
+    if (to_space_.AdvancePage()) {
+      UpdateAllocationInfo();
+    } else {
+      allocation_info_.Reset(to_space_.page_high(), to_space_.page_high());
+    }
+  }
+  if (FLAG_trace_gc_verbose) {
+    PrintIsolate(heap()->isolate(),
+                 "Sealing intermediate generation: bytes_lost=%zu\n",
+                 fragmentation_in_intermediate_generation_);
   }
 }
 
+std::unique_ptr<ObjectIterator> SemiSpace::GetObjectIterator() {
+  // Use the NewSpace::NewObjectIterator to iterate the ToSpace.
+  UNREACHABLE();
+  return std::unique_ptr<ObjectIterator>();
+}
 
 #ifdef DEBUG
 void SemiSpace::Print() {}
@@ -2847,19 +2889,7 @@ HeapObject* PagedSpace::SlowAllocateRaw(int size_in_bytes) {
     }
   }
 
-  // Free list allocation failed and there is no next page.  Fail if we have
-  // hit the old generation size limit that should cause a garbage
-  // collection.
-  if (!heap()->always_allocate() &&
-      heap()->OldGenerationAllocationLimitReached()) {
-    // If sweeper threads are active, wait for them at that point and steal
-    // elements form their free-lists.
-    HeapObject* object = SweepAndRetryAllocation(size_in_bytes);
-    return object;
-  }
-
-  // Try to expand the space and allocate in the new next page.
-  if (Expand()) {
+  if (heap()->ShouldExpandOldGenerationOnAllocationFailure() && Expand()) {
     DCHECK((CountTotalPages() > 1) ||
            (size_in_bytes <= free_list_.Available()));
     return free_list_.Allocate(size_in_bytes);
@@ -2983,7 +3013,7 @@ AllocationResult LargeObjectSpace::AllocateRaw(int object_size,
   DCHECK(page->area_size() >= object_size);
 
   size_ += static_cast<int>(page->size());
-  AccountCommitted(static_cast<intptr_t>(page->size()));
+  AccountCommitted(page->size());
   objects_size_ += object_size;
   page_count_++;
   page->set_next_page(first_page_);
@@ -3120,7 +3150,7 @@ void LargeObjectSpace::FreeUnmarkedObjects() {
 
       // Free the chunk.
       size_ -= static_cast<int>(page->size());
-      AccountUncommitted(static_cast<intptr_t>(page->size()));
+      AccountUncommitted(page->size());
       objects_size_ -= object->Size();
       page_count_--;
 
@@ -3142,6 +3172,9 @@ bool LargeObjectSpace::Contains(HeapObject* object) {
   return owned;
 }
 
+std::unique_ptr<ObjectIterator> LargeObjectSpace::GetObjectIterator() {
+  return std::unique_ptr<ObjectIterator>(new LargeObjectIterator(this));
+}
 
 #ifdef VERIFY_HEAP
 // We do not assume that the large object iterator works, because it depends
